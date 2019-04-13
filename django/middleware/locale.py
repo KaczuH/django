@@ -1,20 +1,17 @@
-"This is the locale selecting middleware that will look at accept headers"
-
 from django.conf import settings
 from django.conf.urls.i18n import is_language_prefix_patterns_used
 from django.http import HttpResponseRedirect
 from django.urls import get_script_prefix, is_valid_path
 from django.utils import translation
 from django.utils.cache import patch_vary_headers
+from django.utils.deprecation import MiddlewareMixin
 
 
-class LocaleMiddleware(object):
+class LocaleMiddleware(MiddlewareMixin):
     """
-    This is a very simple middleware that parses a request
-    and decides what translation object to install in the current
-    thread context. This allows pages to be dynamically
-    translated to the language the user desires (if the language
-    is available, of course).
+    Parse a request and decide what translation object to install in the
+    current thread context. This allows pages to be dynamically translated to
+    the language the user desires (if the language is available, of course).
     """
     response_redirect_class = HttpResponseRedirect
 
@@ -34,7 +31,10 @@ class LocaleMiddleware(object):
         urlconf = getattr(request, 'urlconf', settings.ROOT_URLCONF)
         i18n_patterns_used, prefixed_default_language = is_language_prefix_patterns_used(urlconf)
 
-        if response.status_code == 404 and not language_from_path and i18n_patterns_used:
+        if (response.status_code == 404 and not language_from_path and
+                i18n_patterns_used and prefixed_default_language):
+            # Maybe the language code is missing in the URL? Try adding the
+            # language prefix and redirecting to that URL.
             language_path = '/%s%s' % (language, request.path_info)
             path_valid = is_valid_path(language_path, urlconf)
             path_needs_slash = (
@@ -57,6 +57,5 @@ class LocaleMiddleware(object):
 
         if not (i18n_patterns_used and language_from_path):
             patch_vary_headers(response, ('Accept-Language',))
-        if 'Content-Language' not in response:
-            response['Content-Language'] = language
+        response.setdefault('Content-Language', language)
         return response
